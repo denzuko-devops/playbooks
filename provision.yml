@@ -1,0 +1,78 @@
+hosts: localhost
+ connection: local
+ sudo: yes
+ vars:
+   s3_baseurl: https://s3.amazonaws.com/packeramidemo
+   
+ roles:
+  - role: rheinwerk.ansible_role_sysdig_user_audit
+  - role: atosatto.docker-swarm
+  - role: piwi3910.monit
+      monit_daemon: 30
+      monit_enable_http: True
+      monit_eventqueue_slots: 100
+      monit_eventqueue_enable: True
+
+ tasks:
+  — name: Install list of packages
+    apt:
+      name: {{item}}
+      update_cache: yes
+      state: installed
+    with_items:
+      — docker-compose
+      — apt-transport-https
+      
+   - name: add user mod
+     user:
+       name: {{ item }}
+       append: yes
+       shell: /bin/sh
+       groups: docker, sudo
+     with_items:
+       - "{{remote_user}}"
+       - "{{action_user}}"
+   — name: Download index.html
+     get_url:
+       destination: "./{{ item }}"
+       url: {{s3_baseurl}}/{{ item }}
+     with_items:
+       - index.html
+       - app.js
+       - styles.css
+       - robots.txt
+       - sitemap.xml
+       - manifest.webmanifest
+       - manifest.appcache
+
+ — name: Docker build image
+   docker_image:
+     name: "simple_worx:dockerfile"
+     source: build
+     build:
+       path: {{s3_baseurl}}/Dockerfile
+
+ — name: Docker run even after restart
+   docker_container:
+     become: yes
+     name: simple_worx
+     image: simple_worx:dockerfile
+     ports:
+       - "80:80/tcp"
+     state: started
+     restart_policy : unless-stopped
+     tty: yes
+     interactive: yes
+
+ — name: Docker running?
+   get_url
+ command: curl localhost:80
+ register: out
+ — debug: var=out.stdout_lines
+
+- name: Check that a page returns a status 200 and fail if the word AWESOME is not in the page contents
+  uri:
+    url: http://www.example.com
+    return_content: yes
+  register: this
+  failed_when: "200 not in this.status"
